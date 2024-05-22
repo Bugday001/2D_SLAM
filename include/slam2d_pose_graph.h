@@ -139,8 +139,8 @@ class OccupiedError : public ceres::CostFunction
 {
 public:
 	// 此处，通过构造函数传入相关参数的维度
-    OccupiedError(const Map2d::Ptr& map, const CloudType::Ptr& cloud) 
-    : map_(map), cloud_(cloud) {
+    OccupiedError(const Map2d::Ptr& map, const CloudType::Ptr& cloud, double theta) 
+    : map_(map), cloud_(cloud), theta_(theta) {
         set_num_residuals(cloud->size());
         mutable_parameter_block_sizes()->push_back(3);
     }
@@ -163,33 +163,51 @@ public:
             Eigen::Vector2d grad;
             residuals[i] = 1 - map_->bicubic_interpolation(point, grad);
             //梯度 [alpha*delta_x, alpha*delta_y, -alpha*delat_x*r*sin(theta)+alpha*delat_y*r*cos(theta)]
+            // angle计算有点问题，应该是原始angle+delat_theta
             if (jacobians != NULL && jacobians[0] != NULL) {
-                double angle = atan(point(1)/(point(0)+1e-10));
-                double r = point.norm();
+                double angle = cloud_->originData.angles[i] + theta_;
+                double r = cloud_->originData.dist[i];
                 jacobians[0][i*3] = alpha * grad(0);
                 jacobians[0][i*3+1] = alpha * grad(1);
-                jacobians[0][i*3+2] = 0;//-alpha * grad(0) * r * sin(angle) + 
-                                        //alpha * grad(1) * r * cos(angle);
+                jacobians[0][i*3+2] = -alpha * grad(0) * r * sin(angle) + 
+                                        alpha * grad(1) * r * cos(angle);
             }
         }
-        
-        // if (jacobians == NULL) {
-        //     return true;
-        // }
-        // // 残差对第1个参数块中的参数依次求偏导，即对m求偏导
-        // if (jacobians[0] != NULL) {
-        //     jacobians[0][0] = -y0 * x_;
-        // }
-        // // 残差对第2个参数块中的参数依次求偏导，即对c求偏导
-        // if (jacobians[1] != NULL) {
-        //     jacobians[1][0] = -y0;
-        // }
         return true;
     }
 
 private:
     Map2d::Ptr map_;
     CloudType::Ptr cloud_;
+    double theta_;
 };
+
+/**
+* 避免优化到很远的地方去
+*/
+struct tranformationError
+{   
+    tranformationError(const double weight)
+        : weight_(weight) {}
+
+    template <typename T>
+    bool operator()(const T *const pose,
+                    T *residuals) const
+    {
+        residuals[0] = weight_*(pose[0])*(pose[0]);
+        residuals[1] = weight_*(pose[1])*(pose[1]);
+        residuals[1] = weight_*(pose[2])*(pose[2]);
+        return true;
+    }
+
+    static ceres::CostFunction *Create(const double weight)
+    {
+        return (new ceres::AutoDiffCostFunction<tranformationError, 2, 3>(
+            new tranformationError(weight)));
+    }
+private:
+    double weight_;
+};
+
 
 #endif

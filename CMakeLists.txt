@@ -21,17 +21,16 @@ find_package(catkin REQUIRED COMPONENTS
 )
 
 ## System dependencies are found with CMake's conventions
-# find_package(Boost REQUIRED COMPONENTS system)
-find_package(Eigen3)
-find_package(Ceres)
-find_package(PCL)
+find_package(Boost REQUIRED COMPONENTS system)
+find_package(Eigen3 REQUIRED)
+find_package(Ceres REQUIRED)
 find_package(TBB COMPONENTS tbbmalloc tbbmalloc_proxy tbb_preview)
 
 catkin_package(
  INCLUDE_DIRS include
 #  LIBRARIES slam2d
  CATKIN_DEPENDS nav_msgs roscpp rospy sensor_msgs std_msg tf
- DEPENDS EIGEN3 PCL
+ DEPENDS EIGEN3
 )
 
 ###########
@@ -53,16 +52,15 @@ include_directories(
   include
   src
   ${catkin_INCLUDE_DIRS}
-  ${PCL_INCLUDE_DIRS}
   ${EIGEN3_INCLUDE_DIR}
 )
 
 add_library(map2d STATIC src/map2d.cpp)
-target_link_libraries(map2d ${PCL_LIBRARIES})
+target_link_libraries(map2d)
 
-add_library(slam2d STATIC src/slam2d.cpp)
-target_link_libraries(slam2d ${CERES_LIBRARIES} ${PCL_LIBRARIES} tbb map2d)
+add_library(slam2d STATIC src/slam2d.cpp src/kdtree.cpp)
+target_link_libraries(slam2d ${CERES_LIBRARIES} tbb map2d)
 
 add_executable(slam2d_node  src/slam2d_node.cpp)
-target_link_libraries(slam2d_node slam2d ${catkin_LIBRARIES} ${PCL_LIBRARIES})
+target_link_libraries(slam2d_node slam2d ${catkin_LIBRARIES})
 

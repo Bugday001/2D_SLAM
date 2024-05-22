@@ -59,12 +59,8 @@ void slam2d::scan_match() {
     double pose[3] = {0};
     if (curr_scan_->size() && prev_scan_->size())
     {
-        pcl::PointCloud<PointType> scan, scan_prev;
-        vector2pcl(curr_scan_, scan);
-        vector2pcl(prev_scan_, scan_prev);
-        //solve delta with ceres constraints
-        pcl::KdTreeFLANN<PointType> kdtree;
-        kdtree.setInputCloud(scan.makeShared());
+        KdTree kdtree;
+        kdtree.BuildTree(curr_scan_);
         int K = 5; // K nearest neighbor search
         std::vector<int> index(K);
         std::vector<float> distance(K);
@@ -73,23 +69,20 @@ void slam2d::scan_match() {
         //1. project scan_prev to scan
         for(int iter=0; iter<2; iter++) {
             Problem problem;
-            pcl::PointCloud<PointType> scan_predict;
-            Eigen::Matrix4f T = delta.toMatrix4f();
-            pcl::transformPointCloud(scan_prev, scan_predict, T);
+            CloudType::Ptr scan_predict = std::make_shared<CloudType>(prev_scan_->size());
+            transfromCloudVec(prev_scan_, scan_predict, delta.toMatrix3d());
             //find nearest neighur
-            for (size_t i = 0; i < scan_predict.points.size(); i++)
+            for (size_t i = 0; i < scan_predict->size(); i++)
             {
-                PointType search_point = scan_predict.points[i];
-                //project search_point to current frame
-                if (kdtree.nearestKSearch(search_point, K, index, distance) == K)
+                PointType search_point = scan_predict->points[i];
+                if(kdtree.GetClosestPoint(search_point, index, K))
                 {
                     //add constraints
-                    Eigen::Vector2d p = point2eigen(search_point);
                     Eigen::MatrixXd A(K, 2);
                     for(int i=0; i<K; i++) 
                         A.row(i) = curr_scan_->points[index[i]];
                     Eigen::VectorXd res = A.jacobiSvd(Eigen::ComputeThinU | Eigen::ComputeThinV).solve(B);
-                    ceres::CostFunction *cost_function = lidar_edge_error2::Create(p, res);
+                    ceres::CostFunction *cost_function = lidar_edge_error2::Create(search_point, res);
                     problem.AddResidualBlock(cost_function,
                                             new CauchyLoss(0.5),
                                             pose);
@@ -115,12 +108,8 @@ void slam2d::scan_match() {
 void slam2d::s2sGaussNewton() {
     if (curr_scan_->size() && prev_scan_->size())
     {
-        pcl::PointCloud<PointType> scan, scan_prev;
-        vector2pcl(curr_scan_, scan);
-        vector2pcl(prev_scan_, scan_prev);
-        //solve delta with ceres constraints
-        pcl::KdTreeFLANN<PointType> kdtree;
-        kdtree.setInputCloud(scan.makeShared());
+        KdTree kdtree;
+        kdtree.BuildTree(curr_scan_);
         int K = 5; // K nearest neighbor search
         std::vector<int> index(K);
         std::vector<float> distance(K);
@@ -133,20 +122,17 @@ void slam2d::s2sGaussNewton() {
             Eigen::Vector3d b = Eigen::Vector3d::Zero();
             cost = 0;
             int effective_num = 0;
-            pcl::PointCloud<PointType> scan_predict;
-            Eigen::Matrix4f T = delta.toMatrix4f();
-            pcl::transformPointCloud(scan_prev, scan_predict, T);
+            CloudType::Ptr scan_predict = std::make_shared<CloudType>(prev_scan_->size());
+            transfromCloudVec(prev_scan_, scan_predict, delta.toMatrix3d());
             //find nearest neighur
-            for (size_t i = 0; i < scan_predict.points.size(); i++) {
-                PointType search_point = scan_predict.points[i];
+            for (size_t i = 0; i < scan_predict->points.size(); i++) {
+                PointType search_point = scan_predict->points[i];
                 //project search_point to current frame
-                if (kdtree.nearestKSearch(search_point, K, index, distance) == K) {
+                if (kdtree.GetClosestPoint(search_point, index, K)) {
                     effective_num++;
-                    //add constraints
-                    Eigen::Vector2d p = point2eigen(search_point);
-                               
-                    double angle = atan(scan_prev.points[i].y/(scan_prev.points[i].x+1e-10));
-                    double r = sqrt(p(1)*p(1)+p(0)*p(0));
+                    //add constraints                               
+                    double angle = prev_scan_->originData.angles[i];
+                    double r = prev_scan_->originData.dist[i];
                     Eigen::MatrixXd A(K, 2);
                     for(int i=0; i<K; i++) 
                         A.row(i) = curr_scan_->points[index[i]];
@@ -155,7 +141,7 @@ void slam2d::s2sGaussNewton() {
                     Eigen::Matrix<double,3,1> J;
                     J << res(0), res(1), 
                         -res(0) * r * std::sin(angle + delta.theta) + res(1) * r * std::cos(angle + delta.theta);
-                    double e = (res(0) * p(0) + res(1) * p(1) - 1)/res.norm();
+                    double e = (res(0) * search_point(0) + res(1) * search_point(1) - 1)/res.norm();
                     H += J * J.transpose();
                     b += -J * e;
                     cost += e*e;
@@ -196,9 +182,10 @@ void slam2d::scan_map_interpolation() {
     CloudType::Ptr scan_w = std::make_shared<CloudType>(curr_scan_->size());
     transfromCloudVec(curr_scan_, scan_w, state.toMatrix3d());
     Problem problem;
-    ceres::CostFunction *cost_function = new OccupiedError(map2d_vec, scan_w);
-    problem.AddResidualBlock(cost_function, new CauchyLoss(0.5), pose);
-
+    ceres::CostFunction *cost_function_points = new OccupiedError(map2d_vec, scan_w, state.theta);
+    problem.AddResidualBlock(cost_function_points, new CauchyLoss(0.5), pose);
+    ceres::CostFunction *cost_function_T = tranformationError::Create(0.5);
+    problem.AddResidualBlock(cost_function_T, nullptr, pose);
     ceres::Solver::Options options;
     options.linear_solver_type = ceres::DENSE_SCHUR;
     options.minimizer_progress_to_stdout = false;
@@ -206,7 +193,7 @@ void slam2d::scan_map_interpolation() {
     ceres::Solver::Summary summary;
     ceres::Solve(options, &problem, &summary);
 
-    // state.theta += pose[0];
+    state.theta += pose[0];
     state.t(0) += pose[1];
     state.t(1) += pose[2];
 }
@@ -344,15 +331,18 @@ void slam2d::update()
         timeLog_.s2sMatchT = (double) (endT - startT) / CLOCKS_PER_SEC;
         update_transform();
         startT = clock();
-        // scan_map_match_random();
+        scan_map_match_random();
         // scan_map_violent();
-        scan_map_interpolation();
+        // scan_map_interpolation();
         endT = clock();
         timeLog_.s2mMatchT = (double) (endT - startT) / CLOCKS_PER_SEC;
         startT = clock();
         update_map();
         endT = clock();
         timeLog_.updateMapT = (double) (endT - startT) / CLOCKS_PER_SEC;
+    }
+    else {
+        update_map();
     }
     if (curr_scan_->size()) {
         prev_scan_ = curr_scan_;

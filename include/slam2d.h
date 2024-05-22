@@ -3,6 +3,7 @@
 #include "slam2d_pose_graph.h"
 #include "basic.h"
 #include "map2d.h"
+#include "kdtree.h"
 #include <thread>
 #include <execution>
 
@@ -56,7 +57,6 @@ public:
     CloudType::Ptr curr_scan_;
     CloudType::Ptr prev_scan_;
 
-    PointType invalid_point_;
     Map2d::Ptr map2d_vec;
 
     std::thread debug_thread_;

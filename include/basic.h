@@ -6,53 +6,59 @@
 #endif
 
 #include <iostream>
+#include <fstream>
+#include <iomanip>
+#include <memory>
 #include <sys/times.h>
 #include <Eigen/Eigen>
-#include <pcl/point_cloud.h>
-#include <pcl/point_types.h>
-#include <pcl/filters/voxel_grid.h>
-#include <pcl/kdtree/kdtree_flann.h>
-#include <pcl_conversions/pcl_conversions.h>
-#include <pcl/visualization/cloud_viewer.h>
-#include <pcl/common/transforms.h>
 
-typedef pcl::PointXYZ PointType;
+// BOOST
+#include <boost/format.hpp>
+#include <boost/circular_buffer.hpp>
+#include <boost/algorithm/string.hpp>
+
+
+#include "utils.h"
+
+constexpr size_t kINVALID_ID = std::numeric_limits<size_t>::max(); // 非法定义
+
+using PointType = Eigen::Vector2d;
 
 class CloudType {
 public:
     typedef std::shared_ptr<CloudType> Ptr;
+    typedef struct {  //原始雷达系的点云数据
+        std::vector<double> angles;
+        std::vector<double> dist;
+    } OriginData;
+    OriginData originData;
     // 构造函数，初始化内部数组
-    CloudType(){}
-    CloudType(size_t size) : points(std::vector<Eigen::Vector2d>(size)) {}
+    CloudType(){
+        resize(0);
+    }
+    CloudType(size_t size) {
+        resize(size);
+    }
     // 重载[]操作符，使其可以通过索引访问数组元素（非const版本）  
-    Eigen::Vector2d& operator[](size_t index) {  
-        return points.at(index); // 使用at()来检查索引是否有效  
+    PointType& operator[](size_t index) {  
+        return points.at(index); // 使用at()来检查索引是否有效，会稍慢于[]
     }  
     // 重载[]操作符的const版本，用于const对象  
-    const Eigen::Vector2d& operator[](size_t index) const {  
+    const PointType& operator[](size_t index) const {  
         return points.at(index);
     }
     size_t size() const { return points.size(); }
     size_t size() { return points.size(); }
-    void resize(size_t num) { points.resize(num); }
-    std::vector<Eigen::Vector2d> points;
+    bool empty() { return points.size()==0; }
+
+    void resize(size_t num) { 
+        points.resize(num);
+        originData.angles.resize(num);
+        originData.dist.resize(num);
+    }
+    std::vector<PointType> points;
 };
-
-inline Eigen::Vector2d point2eigen(PointType p)
-{
-    Eigen::Vector2d pp;
-    pp(0) = p.x;
-    pp(1) = p.y;
-    return pp;
-}
-
-inline PointType eigen2point(Eigen::Vector2d pp)
-{
-    PointType p;
-    p.x = pp(0);
-    p.y = pp(1);
-    return p;
-}
+using CloudPtr = CloudType::Ptr;
 
 
 /**
@@ -67,18 +73,18 @@ inline Eigen::Matrix3d pose2Matrix3d(const Eigen::Vector3d& pose) {
     return T;
 }
 
-inline void vector2pcl(const CloudType::Ptr& scan, pcl::PointCloud<PointType>& scan_pcl) {
-    int points_nums = scan->size();
-    scan_pcl.points.resize(points_nums);
-    for (auto i = 0; i < points_nums; i++) {
-        scan_pcl.points[i] = eigen2point(scan->points[i]);
-    }
-    pcl::Indices indices;
-    pcl::removeNaNFromPointCloud(scan_pcl, scan_pcl, indices);
-    scan_pcl.width = scan_pcl.points.size();
-    scan_pcl.height = 1;
-    scan_pcl.is_dense = true;
-}
+// inline void vector2pcl(const CloudType::Ptr& scan, pcl::PointCloud<pclPointType>& scan_pcl) {
+//     int points_nums = scan->size();
+//     scan_pcl.points.resize(points_nums);
+//     for (auto i = 0; i < points_nums; i++) {
+//         scan_pcl.points[i] = eigen2point(scan->points[i]);
+//     }
+//     pcl::Indices indices;
+//     pcl::removeNaNFromPointCloud(scan_pcl, scan_pcl, indices);
+//     scan_pcl.width = scan_pcl.points.size();
+//     scan_pcl.height = 1;
+//     scan_pcl.is_dense = true;
+// }
 
 /**
 * CloudType类型点云变换

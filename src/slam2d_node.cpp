@@ -1,16 +1,17 @@
 #include "slam2d.h"
-
-#include <cmath>
-#include <nav_msgs/Odometry.h>
-#include <nav_msgs/Path.h>
+#include <ros/ros.h>
+#include <ros/time.h>
+#include <ros/duration.h>
+#include <sensor_msgs/MultiEchoLaserScan.h>
 #include <geometry_msgs/PoseStamped.h>
+#include <tf/transform_broadcaster.h>
 #include <sensor_msgs/PointCloud.h>
 #include <nav_msgs/OccupancyGrid.h>
-#include <ros/ros.h>
-#include <sensor_msgs/MultiEchoLaserScan.h>
 #include <sensor_msgs/LaserScan.h>
-#include "tf/transform_broadcaster.h"
+#include <nav_msgs/Odometry.h>
+#include <nav_msgs/Path.h>
 #include <Eigen/Eigen>
+#include <cmath>
 
 std::shared_ptr<slam2d> slam;
 ros::Publisher pub_pose, pub_path, map_pub;
@@ -18,8 +19,7 @@ ros::Publisher pub_laserscan;
 ros::Publisher pub_map2d;
 nav_msgs::OccupancyGrid map2d;
 void publish_pose();
-void publish_map2d();
-
+void updateROSMap();
 void readin_scan_data(const sensor_msgs::MultiEchoLaserScanConstPtr &msg)
 {
     CloudType cloud;
@@ -36,6 +36,8 @@ void readin_scan_data(const sensor_msgs::MultiEchoLaserScanConstPtr &msg)
         float theta = msg->angle_min + i * msg->angle_increment;
         cloud[valid_cnt](0) = dist * cos(theta);
         cloud[valid_cnt](1) = dist * sin(theta);
+        cloud.originData.angles[valid_cnt] = theta;
+        cloud.originData.dist[valid_cnt] = dist;
         valid_cnt++;
     }
     cloud.resize(valid_cnt);
@@ -57,6 +59,8 @@ void readin_scan_data(const sensor_msgs::LaserScanConstPtr &msg)
         float theta = msg->angle_min + i * msg->angle_increment;
         cloud[valid_cnt](0) = dist * cos(theta);
         cloud[valid_cnt](1) = dist * sin(theta);
+        cloud.originData.angles[valid_cnt] = theta;
+        cloud.originData.dist[valid_cnt] = dist;
         valid_cnt++;
     }
     cloud.resize(valid_cnt);
@@ -92,7 +96,7 @@ void laserscan_callback(const sensor_msgs::LaserScanConstPtr &msg)
     readin_scan_data(msg);
     slam->update();
     publish_pose();
-    publish_map2d();
+    updateROSMap();
 }
 
 void multiecho_laserscan_callback(const sensor_msgs::MultiEchoLaserScanConstPtr &msg)
@@ -100,18 +104,25 @@ void multiecho_laserscan_callback(const sensor_msgs::MultiEchoLaserScanConstPtr 
     readin_scan_data(msg);
     slam->update();
     publish_pose();
-    publish_map2d();
+    updateROSMap();
     multiecho2laserscan(msg);
 }
 
-void publish_map2d()
+//用定时器不准，开多线程占用很大不好
+void publish_map()
 {
     map2d.header.stamp = ros::Time(slam->timestamp_);
+    pub_map2d.publish(map2d);
+}
+
+void updateROSMap() {
     for (auto index : slam->map2d_vec->cell2update_) {
         map2d.data[index] = slam->map2d_vec->toROSMap(index);
     }
-    pub_map2d.publish(map2d);
+    publish_map();
 }
+
+
 
 void publish_pose()
 {

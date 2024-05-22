@@ -8,9 +8,9 @@
   </node>
 
   <arg name="bag1" default="/home/bugday2004/test_ws/src/lesson3.bag"/>
-  <arg name="bag2" default="/home/bugday2004/test_ws/src/slam2d/b0-2014-07-11-10-58-16.bag"/>
-  <arg name="bag3" default="/home/bugday2004/test_ws/src/slam2d/floor3.bag"/>
-  <arg name="bag4" default="/home/bugday2004/test_ws/src/slam2d/b2-2016-04-05-14-44-52.bag"/>
+  <arg name="bag2" default="/home/bugday2004/test_ws/src/b0-2014-07-11-10-58-16.bag"/>
+  <arg name="bag3" default="/home/bugday2004/test_ws/src/floor3.bag"/>
+  <arg name="bag4" default="/home/bugday2004/test_ws/src/b2-2016-04-05-14-44-52.bag"/>
   <node pkg="rosbag" type="play" name="rosbag" args="-d 2 $(arg bag4) -r 1 -s 0 --clock" />
    <node pkg="rviz" type="rviz" name="rviz" args="-d $(find slam2d)/cfg/slam2d.rviz"/>
 </launch>

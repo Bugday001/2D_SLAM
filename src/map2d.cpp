@@ -4,8 +4,11 @@ Map2d::Map2d(double width, double height, double resolution) {
     resolution_ = resolution;
     width_ = width; 
     height_ = height;
-    occupied_ = std::vector<unsigned int>(width_*height_, 0);
-    visits_ = std::vector<unsigned int>(width_*height_, 0);
+    odds = std::vector<double>(width_*height_, 1.0);
+    p_hit = 0.55;
+    p_miss = 0.49;
+    lofree = p_miss/(1-p_miss);
+    looccu = p_hit/(1-p_hit);
 }
 
 void Map2d::bresenham(const Eigen::Vector2i& p1, const Eigen::Vector2i& p2)
@@ -23,7 +26,8 @@ void Map2d::bresenham(const Eigen::Vector2i& p1, const Eigen::Vector2i& p2)
 
     while (x1 != x2 && y1 != y2)
     {
-        addVisits(y1, x1);
+        addMiss(y1, x1);
+        cell2update_.insert(y1*width_+x1);
         if(isOccupied(y1*width_+x1)) {
             return;
         }
@@ -40,6 +44,7 @@ void Map2d::bresenham(const Eigen::Vector2i& p1, const Eigen::Vector2i& p2)
         }
     }
     addOccupied(p2(1), p2(0));
+    cell2update_.insert(p2(1)*width_+p2(0));
 }
 
 void Map2d::update_map(const Eigen::Vector2i& origin, const CloudType::Ptr& scan_w)
@@ -50,8 +55,8 @@ void Map2d::update_map(const Eigen::Vector2i& origin, const CloudType::Ptr& scan
     if(origin(0) < 0 || origin(0) >= height_ || origin(1) < 0 || origin(1) >= width_) return;
     for (size_t i = 0; i < scan_w->size(); i++)
     {
-        // PointType p_w = scan_w.points[i];
-        // PointType p = scan.points[i];
+        // pclPointType p_w = scan_w.points[i];
+        // pclPointType p = scan.points[i];
         // float dist = sqrtf(p.x * p.x + p.y * p.y);
         // if (dist > 20) continue;
 
@@ -133,8 +138,8 @@ inline void Map2d::cubic_weight(float xin, float a, float& w, float& dw)
 
 double Map2d::bicubic_interpolation(const Eigen::Vector2d& p, Eigen::Vector2d& grad) {
     Eigen::Vector2d xy  = world2map_d(p);
-    float x = xy(0);
-    float y = xy(1);
+    float x = xy(1);
+    float y = xy(0);
     double a = -0.5;
     float coeff[16], grad_x[16], grad_y[16];
     //计算权重
@@ -158,14 +163,37 @@ double Map2d::bicubic_interpolation(const Eigen::Vector2d& p, Eigen::Vector2d& g
     float sum = 0.0;
     int x0 = floor(x) - 1;
     int y0 = floor(y) - 1;
-    
+    grad.setZero();
     for(int i = 0; i < 4; i++) {
         for(int j = 0; j < 4; j++) {
-            double odds = getOdds((x0+i)*width_+y0+j);
-            sum += coeff[i*4+j]*odds;
-            grad(0) += grad_x[i*4+j]*odds;
-            grad(1) += grad_y[i*4+j]*odds;
+            double probability = getProbability((x0+i)*width_+y0+j);
+            sum += coeff[i*4+j]*probability;
+        }
+    }
+    for(int i = 0; i < 4; i++) {
+        for(int j = 0; j < 4; j++) {
+            double probability = getProbability((x0+i)*width_+y0+j);
+            grad(1) += grad_x[i*4+j]*(probability-sum);
+            grad(0) += grad_y[i*4+j]*(probability-sum);
         }
     }
     return (double)sum;
+}
+
+/*
+* 线性插值
+*/
+double Map2d::bilinearInterpolation(const Eigen::Vector2d& p, Eigen::Vector2d& grad) {
+    Eigen::Vector2d xy = world2map_d(Eigen::Vector2d(p(1),p(0)));
+    Eigen::Vector2i xy0(floor(xy(0)), floor(xy(1)));
+    Eigen::Vector2d uv = xy - xy0.cast<double>();
+    double value =  getProbability(xy0(0)*width_+xy0(1))*uv(0)*uv(1) + 
+                    getProbability(xy0(0)*width_+xy0(1)+1)*(1-uv(0))*uv(1) + 
+                    getProbability((xy0(0)+1)*width_+xy0(1))*uv(0)*(1-uv(1)) + 
+                    getProbability((xy0(0)+1)*width_+xy0(1)+1)*(1-uv(0))*(1-uv(1));
+    grad(1) = -0.5*((getProbability(xy0(0)*width_+xy0(1)+1)-getProbability(xy0(0)*width_+xy0(1)))*uv(1)+
+            (getProbability((xy0(0)+1)*width_+xy0(1)+1)-getProbability((xy0(0)+1)*width_+xy0(1)))*(1-uv(1)));
+    grad(0) = -0.5*((getProbability((xy0(0)+1)*width_+xy0(1))-getProbability(xy0(0)*width_+xy0(1)))*uv(0)+
+            (getProbability((xy0(0)+1)*width_+xy0(1)+1)-getProbability(xy0(0)*width_+xy0(1)+1))*(1-uv(0)));
+    return value;
 }

@@ -50,13 +50,13 @@ class KdTree {
     bool GetClosestPointMT(const CloudPtr& cloud, std::vector<std::pair<size_t, size_t>>& matches, int k = 5);
 
     /// 这个被用于计算最近邻的倍数
-    void SetEnableANN(bool use_ann = true, float alpha = 0.1) {
+    inline void SetEnableANN(bool use_ann = true, float alpha = 0.1) {
         approximate_ = use_ann;
         alpha_ = alpha;
     }
 
     /// 返回节点数量
-    size_t size() const { return size_; }
+    inline size_t size() const { return size_; }
 
     /// 清理数据
     void Clear();

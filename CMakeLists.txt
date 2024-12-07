@@ -1,9 +1,6 @@
 cmake_minimum_required(VERSION 3.0.2)
 project(slam2d)
 
-## Compile as C++11, supported in ROS Kinetic and newer
-# add_compile_options(-std=c++11)
-
 set(CMAKE_BUILD_TYPE "Release")
 set(CMAKE_CXX_FLAGS "-std=c++17")
 set(CMAKE_CXX_FLAGS_RELEASE "-O3 -Wall -g")
@@ -45,6 +42,14 @@ file(REMOVE ${CMAKE_BINARY_DIR}/test_cpuid.cpp)
 if(HAS_CPUID)
   add_compile_definitions(HAS_CPUID)
 endif()
+include(FindOpenMP)
+if(OPENMP_FOUND)
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
+  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${OpenMP_EXE_LINKER_FLAGS}")
+else(OPENMP_FOUND)
+  message("ERROR: OpenMP could not be found.")
+endif(OPENMP_FOUND)
 
 ## Specify additional locations of header files
 ## Your package locations should be listed before other locations
@@ -59,7 +64,7 @@ add_library(map2d STATIC src/map2d.cpp)
 target_link_libraries(map2d)
 
 add_library(slam2d STATIC src/slam2d.cpp src/kdtree.cpp)
-target_link_libraries(slam2d ${CERES_LIBRARIES} tbb map2d)
+target_link_libraries(slam2d ${CERES_LIBRARIES} tbb map2d ${OpenMP_LIBS})
 
 add_executable(slam2d_node  src/slam2d_node.cpp)
 target_link_libraries(slam2d_node slam2d ${catkin_LIBRARIES})

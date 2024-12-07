@@ -161,11 +161,12 @@ public:
             Eigen::Vector2d point(cloud_->points[i](0), cloud_->points[i](1));
             point = R * point + t;
             Eigen::Vector2d grad;
-            residuals[i] = 1 - map_->bicubic_interpolation(point, grad);
+            residuals[i] = 1 - map_->bicubic_interpolation(point, grad);  // 有时候是负值
+            // std::cout<<residuals[i]<<", ";
             //梯度 [alpha*delta_x, alpha*delta_y, -alpha*delat_x*r*sin(theta)+alpha*delat_y*r*cos(theta)]
             // angle计算有点问题，应该是原始angle+delat_theta
             if (jacobians != NULL && jacobians[0] != NULL) {
-                double angle = cloud_->originData.angles[i] + theta_;
+                double angle = cloud_->originData.angles[i] + theta_ + pose[0][0];
                 double r = cloud_->originData.dist[i];
                 jacobians[0][i*3] = alpha * grad(0);
                 jacobians[0][i*3+1] = alpha * grad(1);
@@ -173,6 +174,7 @@ public:
                                         alpha * grad(1) * r * cos(angle);
             }
         }
+        // std::cout<<std::endl;
         return true;
     }
 
@@ -196,13 +198,13 @@ struct tranformationError
     {
         residuals[0] = weight_*(pose[0])*(pose[0]);
         residuals[1] = weight_*(pose[1])*(pose[1]);
-        residuals[1] = weight_*(pose[2])*(pose[2]);
+        residuals[2] = weight_*(pose[2])*(pose[2]);
         return true;
     }
 
     static ceres::CostFunction *Create(const double weight)
     {
-        return (new ceres::AutoDiffCostFunction<tranformationError, 2, 3>(
+        return (new ceres::AutoDiffCostFunction<tranformationError, 3, 3>(
             new tranformationError(weight)));
     }
 private:

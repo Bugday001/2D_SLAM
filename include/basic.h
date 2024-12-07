@@ -40,18 +40,18 @@ public:
         resize(size);
     }
     // 重载[]操作符，使其可以通过索引访问数组元素（非const版本）  
-    PointType& operator[](size_t index) {  
+    inline PointType& operator[](size_t index) {  
         return points.at(index); // 使用at()来检查索引是否有效，会稍慢于[]
     }  
     // 重载[]操作符的const版本，用于const对象  
-    const PointType& operator[](size_t index) const {  
+    inline const PointType& operator[](size_t index) const {  
         return points.at(index);
     }
-    size_t size() const { return points.size(); }
-    size_t size() { return points.size(); }
-    bool empty() { return points.size()==0; }
+    inline size_t size() const { return points.size(); }
+    inline size_t size() { return points.size(); }
+    inline bool empty() { return points.size()==0; }
 
-    void resize(size_t num) { 
+    inline void resize(size_t num) { 
         points.resize(num);
         originData.angles.resize(num);
         originData.dist.resize(num);

@@ -66,6 +66,7 @@ void slam2d::scan_match() {
         std::vector<float> distance(K);
         Eigen::VectorXd B(K);
         B.setOnes();
+
         //1. project scan_prev to scan
         for(int iter=0; iter<2; iter++) {
             Problem problem;
@@ -125,6 +126,13 @@ void slam2d::s2sGaussNewton() {
             CloudType::Ptr scan_predict = std::make_shared<CloudType>(prev_scan_->size());
             transfromCloudVec(prev_scan_, scan_predict, delta.toMatrix3d());
             //find nearest neighur
+            int num_threads_;
+                    #ifdef _OPENMP
+  num_threads_ = omp_get_max_threads()-2;
+#else
+  num_threads_ = -1;
+#endif
+            #pragma omp parallel for num_threads(num_threads_) reduction(+ : cost) schedule(guided, 8)
             for (size_t i = 0; i < scan_predict->points.size(); i++) {
                 PointType search_point = scan_predict->points[i];
                 //project search_point to current frame
@@ -184,7 +192,7 @@ void slam2d::scan_map_interpolation() {
     Problem problem;
     ceres::CostFunction *cost_function_points = new OccupiedError(map2d_vec, scan_w, state.theta);
     problem.AddResidualBlock(cost_function_points, new CauchyLoss(0.5), pose);
-    ceres::CostFunction *cost_function_T = tranformationError::Create(0.5);
+    ceres::CostFunction *cost_function_T = tranformationError::Create(10);
     problem.AddResidualBlock(cost_function_T, nullptr, pose);
     ceres::Solver::Options options;
     options.linear_solver_type = ceres::DENSE_SCHUR;
